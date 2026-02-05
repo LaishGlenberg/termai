@@ -63,6 +63,7 @@ Options:
   -n <number>  Number of command blocks to retrieve (default: "1")
   -p <prompt>  Custom prompt (default: "Explain this terminal output.")
   -m <model>   Specify an Ollama model (default: "llama3.1:latest")
+  -c           Make explanation concise
   --deep       Use DeepSeek model (cloud hosted, fast, powerful)
   --setup      Run interactive setup
   --config     Display current configuration

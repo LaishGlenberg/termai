@@ -28,6 +28,7 @@ program
   .option('-n <number>', 'Number of command blocks to retrieve', '1')
   .option('-p <prompt>', 'Custom prompt', 'Explain this terminal output.')
   .option('-m <model>', 'Specify an Ollama model', config.defaultModel)
+  .option('-c', 'Make explanation concise')
   .option('--deep', 'Use DeepSeek model')
   .option('--setup', 'Run interactive setup')
   .option('--config', 'Display current configuration')
@@ -138,7 +139,8 @@ else {
       if (isPrompt && blocksFound === numBlocks + 1) break;
     }
 
-    const finalPrompt = `${options.p}\n\nTerminal context:\n\`\`\`text\n${selectedLines.join('\n')}\n\`\`\``;
+    const conciseMsg = options.c ? 'KEEP ANSWER CONCISE' : ''
+    const finalPrompt = `${options.p} ${conciseMsg}\n\nTerminal context:\n\`\`\`text\n${selectedLines.join('\n')}\n\`\`\``;
     await streamOllama(finalPrompt);
   }
 }
