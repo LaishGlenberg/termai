@@ -1,0 +1,17 @@
+{
+  "name": "term-ai",
+  "version": "1.3.0",
+  "description": "AI terminal output explainer",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "termai": "./index.js"
+  },
+  "keywords": ["cli", "ai", "ollama", "terminal", "explainer"],
+  "author": "lglen/weadsy",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^11.1.0",
+    "node-fetch": "^3.3.2"
+  }
+}
