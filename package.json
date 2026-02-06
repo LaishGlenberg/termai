@@ -7,11 +7,23 @@
   "bin": {
     "termai": "./index.js"
   },
-  "keywords": ["cli", "ai", "ollama", "terminal", "explainer"],
+  "keywords": [
+    "cli",
+    "ai",
+    "ollama",
+    "terminal",
+    "explainer"
+  ],
   "author": "lglen/weadsy",
   "license": "MIT",
   "dependencies": {
     "commander": "^11.1.0",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "openai": "^6.18.0"
+  },
+  "scripts": {
+    "postinstall": "echo \"Run 'termai --setup' to configure termai settings. Use 'termai -h' for a list of options and examples\"",
+    "setup": "termai --setup",
+    "help": "termai -h"
   }
 }

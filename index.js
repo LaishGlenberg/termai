@@ -6,6 +6,8 @@ import os from 'os';
 import readline from 'readline';
 import { program } from 'commander';
 import fetch from 'node-fetch';
+import OpenAI from 'openai';
+import { execSync } from 'child_process';
 
 const CONFIG_PATH = path.join(os.homedir(), '.termai.json');
 const LOGFILE = '/tmp/current_terminal.log';
@@ -13,7 +15,8 @@ const LOGFILE = '/tmp/current_terminal.log';
 // Default configuration
 let config = {
   ollamaUrl: 'http://172.20.16.1:11434',
-  defaultModel: 'llama3.1:latest'
+  defaultModel: 'llama3.1:latest',
+  apiKey: "your-api-key"
 };
 
 // Load existing config if it exists
@@ -42,6 +45,28 @@ const model = options.deep ? 'deepseek-v3.1:671b-cloud' : options.m;
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const question = (q) => new Promise((resolve) => rl.question(q, resolve));
 
+function getWslHostIp(url) {
+  if (url.includes('WSL_HOST')) {
+    try {
+      // Executes the shell command and gets the output
+      const hostIp = execSync("ip route | grep default | awk '{print $3}'").toString().trim();
+      return url.replace('WSL_HOST', hostIp);
+    } catch (e) {
+      console.warn('> Warning: Could not detect WSL host IP, falling back to localhost.');
+      return url.replace('WSL_HOST', '127.0.0.1');
+    }
+  }
+  return url;
+}
+
+const resolvedUrl = getWslHostIp(config.ollamaUrl);
+
+// Initialize OpenAI client with the resolved URL
+const openai = new OpenAI({
+  baseURL: resolvedUrl.endsWith('/v1') ? resolvedUrl : `${resolvedUrl}/v1`,
+  apiKey: config.apiKey,
+});
+
 function cleanTerminalOutput(str) {
   let cleaned = str.replace(/\0/g, '').replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/\x1B\].*?(\x07|\x1B\\)/g, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   let last;
@@ -50,6 +75,26 @@ function cleanTerminalOutput(str) {
 }
 
 async function streamOllama(prompt) {
+  process.stderr.write(`> Querying ${model} at ${openai.baseURL}...\n`);
+  try {
+    const stream = await openai.chat.completions.create({
+      model: model,
+      messages: [{ role: 'user', content: prompt }],
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      process.stdout.write(content);
+    }
+    process.stdout.write('\n');
+  } catch (err) {
+    console.error(`\nConnection failed: ${err.message}. Is the AI service running?`);
+  }
+}
+
+
+/* async function streamOllama(prompt) {
   process.stderr.write(`> Querying ${model} at ${config.ollamaUrl}...\n`);
   try {
     const response = await fetch(`${config.ollamaUrl}/api/generate`, {
@@ -71,14 +116,37 @@ async function streamOllama(prompt) {
   } catch (err) {
     console.error(`\nConnection failed: ${err.message}. Is Ollama running?`);
   }
-}
+} */
 
 // --- COMMANDS ---
 if (options.setup) {
   console.log('--- termai Setup ---');
+
+  /* const newUrl = await question(`Ollama URL [${config.ollamaUrl}]: `);
+  if (newUrl) config.ollamaUrl = newUrl; */
+  const apiShortcuts = `
+  Enter your own endpoint or type 0, 1, 2 for shortcut:
+    [0] Ollama local (default) -> http://localhost:11434
+    [1] OpenAI model -> https://api.openai.com
+    [2] Ollama WSL (dynamic host) -> http://WSL_HOST:11434 
+  `;
+  console.log(apiShortcuts); // Fixed: actually log the shortcuts
   
-  const newUrl = await question(`Ollama URL [${config.ollamaUrl}]: `);
-  if (newUrl) config.ollamaUrl = newUrl;
+  const newUrl = await question(`API Base URL [${config.ollamaUrl}]: `);
+  switch (newUrl) {
+    case '0': config.ollamaUrl = 'http://localhost:11434'; break;
+    case '1': config.ollamaUrl = 'https://api.openai.com'; break;
+    case '2': 
+      config.ollamaUrl = 'http://WSL_HOST:11434'; 
+      console.log('> WSL Dynamic Host selected. IP will be detected at runtime.');
+      break;
+    case '': break;
+    default:
+      config.ollamaUrl = newUrl;
+  }
+
+  const newKey = await question(`API Key (optional for Ollama) [${config.apiKey}]: `);
+  if (newKey) config.apiKey = newKey;
 
   const newModel = await question(`Default Model [${config.defaultModel}]: `);
   if (newModel) config.defaultModel = newModel;
@@ -86,21 +154,31 @@ if (options.setup) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   console.log('Settings saved to ' + CONFIG_PATH);
 
-  const doBash = await question('Enable terminal logging in .bashrc? (y/n): ');
-  if (doBash.toLowerCase() === 'y') {
-    const bashrcPath = path.join(os.homedir(), '.bashrc');
-    const setupCode = `\n# --- TERMAI LOGGING START ---\nif [ -z "$SCRIPT_LOGGING" ] && [ "$TERM" != "dumb" ]; then\n    export SCRIPT_LOGGING=1\n    while true; do\n        script -q -f /tmp/current_terminal.log\n        if [ -f /tmp/restart_termai ]; then\n            rm /tmp/restart_termai\n            > /tmp/current_terminal.log\n            sleep 0.1\n            continue\n        else\n            break\n        fi\n    done\n    exit\nfi\nalias clearlog='touch /tmp/restart_termai && exit'\n# --- TERMAI LOGGING END ---\n`;
-    
-    const content = fs.readFileSync(bashrcPath, 'utf-8');
-    if (!content.includes('SCRIPT_LOGGING')) {
-      fs.appendFileSync(bashrcPath, setupCode);
-      console.log('Updated .bashrc. !!! RUN THIS NOW: source ~/.bashrc !!!');
-    } else {
-      console.log('.bashrc logging already configured.');
+  const bashrcPath = path.join(os.homedir(), '.bashrc');
+
+  const content = fs.readFileSync(bashrcPath, 'utf-8');
+  if (!content.includes('SCRIPT_LOGGING')) {
+    while (true) {
+      const doBash = await question('Allow terminal logging in .bashrc? (y/n/exit): ');
+      if (doBash.toLowerCase() === 'y' || doBash.toLowerCase() === '') {
+        const setupCode = `\n# --- TERMAI LOGGING START ---\nif [ -z "$SCRIPT_LOGGING" ] && [ "$TERM" != "dumb" ]; then\n    export SCRIPT_LOGGING=1\n    while true; do\n        script -q -f /tmp/current_terminal.log\n        if [ -f /tmp/restart_termai ]; then\n            rm /tmp/restart_termai\n            > /tmp/current_terminal.log\n            sleep 0.1\n            continue\n        else\n            break\n        fi\n    done\n    exit\nfi\nalias clearlog='touch /tmp/restart_termai && exit'\n# --- TERMAI LOGGING END ---\n`;
+
+        fs.appendFileSync(bashrcPath, setupCode);
+        console.log('Updated .bashrc. !!! RUN THIS NOW: source ~/.bashrc !!!');
+        break;
+      } else if (doBash.toLowerCase() === 'exit') {
+        console.log("Exiting setup, termai won't be usable until you enable logging. Run 'termai --setup' to start the setup process again")
+        break;
+      } else {
+        console.log("termai needs to log terminal output in order to work. The bash terminal does not store output on its own. Type 'exit' to quite loop")
+      }
     }
+  } else {
+    console.log('.bashrc logging already configured.');
   }
+
   rl.close();
-} 
+}
 
 else if (options.config) {
   console.log(JSON.stringify(config, null, 2));
