@@ -1,0 +1,22 @@
+# --- TERMAI LOGGING START ---
+if [ -z "$SCRIPT_LOGGING" ] && [ "$TERM" != "dumb" ]; then
+    export SCRIPT_LOGGING=1
+    # Auto-exit if log > 50KB after any command
+    export PROMPT_COMMAND='if [ -f /tmp/current_terminal.log ] && [ $(stat -c%s /tmp/current_terminal.log) -gt %%LOGSIZE%% ]; then touch /tmp/restart_termai && echo "logfile >= %%LOGSIZE%% B, clearing log file" && exit; fi'
+    
+    while true; do
+        script -q -f /tmp/current_terminal.log
+        if [ -f /tmp/restart_termai ]; then
+            rm /tmp/restart_termai
+            > /tmp/current_terminal.log
+            sleep 0.1
+            continue
+        else
+            break
+        fi
+    done
+    exit
+fi
+alias clearlog='touch /tmp/restart_termai && exit'
+# --- TERMAI LOGGING END ---
+                  

@@ -16,7 +16,8 @@ const LOGFILE = '/tmp/current_terminal.log';
 let config = {
   ollamaUrl: 'http://172.20.16.1:11434',
   defaultModel: 'llama3.1:latest',
-  apiKey: "your-api-key"
+  apiKey: "your-api-key",
+  logsizeMax: "50"
 };
 
 // Load existing config if it exists
@@ -155,14 +156,18 @@ if (options.setup) {
   console.log('Settings saved to ' + CONFIG_PATH);
 
   const bashrcPath = path.join(os.homedir(), '.bashrc');
-
+  //5242880
   const content = fs.readFileSync(bashrcPath, 'utf-8');
   if (!content.includes('SCRIPT_LOGGING')) {
     while (true) {
       const doBash = await question('Allow terminal logging in .bashrc? (y/n/exit): ');
       if (doBash.toLowerCase() === 'y' || doBash.toLowerCase() === '') {
-        const setupCode = `\n# --- TERMAI LOGGING START ---\nif [ -z "$SCRIPT_LOGGING" ] && [ "$TERM" != "dumb" ]; then\n    export SCRIPT_LOGGING=1\n    while true; do\n        script -q -f /tmp/current_terminal.log\n        if [ -f /tmp/restart_termai ]; then\n            rm /tmp/restart_termai\n            > /tmp/current_terminal.log\n            sleep 0.1\n            continue\n        else\n            break\n        fi\n    done\n    exit\nfi\nalias clearlog='touch /tmp/restart_termai && exit'\n# --- TERMAI LOGGING END ---\n`;
+        console.log('Set custom upperbound on log file size. Must manually edit .bashrc if you want to change it again')
+        const newLogSize = await question(`Clear log file when >= [${config.logsizeMax} KB]: `);
+        if (newLogSize) config.logsizeMax = newLogSize;
 
+        let setupCode = fs.readFileSync('bash-setup.txt', 'utf-8');
+        setupCode = setupCode.replace(/%%LOGSIZE%%/g, Number(config.logsizeMax)*1024);
         fs.appendFileSync(bashrcPath, setupCode);
         console.log('Updated .bashrc. !!! RUN THIS NOW: source ~/.bashrc !!!');
         break;
@@ -170,7 +175,7 @@ if (options.setup) {
         console.log("Exiting setup, termai won't be usable until you enable logging. Run 'termai --setup' to start the setup process again")
         break;
       } else {
-        console.log("termai needs to log terminal output in order to work. The bash terminal does not store output on its own. Type 'exit' to quite loop")
+        console.log("termai needs to log terminal output in order to work. The bash terminal does not store output on its own. Type 'exit' to quit loop")
       }
     }
   } else {
