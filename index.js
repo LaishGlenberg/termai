@@ -94,34 +94,9 @@ async function streamOllama(prompt) {
   }
 }
 
-
-/* async function streamOllama(prompt) {
-  process.stderr.write(`> Querying ${model} at ${config.ollamaUrl}...\n`);
-  try {
-    const response = await fetch(`${config.ollamaUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, prompt, stream: true })
-    });
-    if (!response.ok) throw new Error(`Ollama Error: ${response.statusText}`);
-    for await (const chunk of response.body) {
-      const jsonStrings = chunk.toString().split('\n').filter(Boolean);
-      for (const str of jsonStrings) {
-        try {
-          const json = JSON.parse(str);
-          if (json.response) process.stdout.write(json.response);
-        } catch (e) {}
-      }
-    }
-    process.stdout.write('\n');
-  } catch (err) {
-    console.error(`\nConnection failed: ${err.message}. Is Ollama running?`);
-  }
-} */
-
 // --- COMMANDS ---
 if (options.setup) {
-  console.log('--- termai Setup ---');
+  console.log("--- termai Setup ('enter' to skip) ---");
 
   /* const newUrl = await question(`Ollama URL [${config.ollamaUrl}]: `);
   if (newUrl) config.ollamaUrl = newUrl; */
