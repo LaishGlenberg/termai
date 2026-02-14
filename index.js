@@ -30,7 +30,7 @@ program
   .description('AI terminal assistant and output explainer')
   .argument('[query...]', 'Direct prompt to Ollama (skips terminal context)')
   .option('-n <number>', 'Number of command blocks to retrieve', '1')
-  .option('-p <prompt>', 'Custom prompt', 'Explain this terminal output.')
+  .option('-p <prompt>', 'Custom prompt', 'Explain this terminal output')
   .option('-m <model>', 'Specify an Ollama model', config.defaultModel)
   .option('-c', 'Make explanation concise')
   .option('--deep', 'Use DeepSeek model')
@@ -69,10 +69,20 @@ const openai = new OpenAI({
 });
 
 function cleanTerminalOutput(str) {
-  let cleaned = str.replace(/\0/g, '').replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/\x1B\].*?(\x07|\x1B\\)/g, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // 1. Normalize CRLF and strip OSC (titles)
+  let cleaned = str.replace(/\r\n/g, '\n').replace(/\0/g, '').replace(/\x1B\].*?(\x07|\x1B\\)/g, '');
+  
   let last;
-  do { last = cleaned; cleaned = cleaned.replace(/[^\n][\x08\x7f]/g, '').replace(/^[\x08\x7f]+/g, ''); } while (cleaned !== last);
-  return cleaned.replace(/\u001b/g, '');
+  do {
+    last = cleaned;
+    cleaned = cleaned
+      .replace(/[^\n][\x08\x7f]/g, '')            // Handle backspaces (^H)
+      .replace(/\x1B\[(\d+)?P/g, '')              // Strip "Delete Character" sequences
+      .replace(/\r(?!\n)/g, '\n')                 // Convert raw \r to newline to prevent text merging
+      .replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, ''); // Strip remaining ANSI (colors/moves)
+  } while (cleaned !== last);
+
+  return cleaned.replace(/\x1B/g, '').trim();
 }
 
 async function streamOllama(prompt) {
@@ -197,8 +207,15 @@ else {
       if (isPrompt && blocksFound === numBlocks + 1) break;
     }
 
+    // Label lines to help LLM distinguish command from output
+    const formattedLines = selectedLines.map(line => {
+      return promptRegex.test(line) ? `USER_COMMAND: ${line}` : `SYSTEM_OUTPUT: ${line}`;
+    });
+
     const conciseMsg = options.c ? 'KEEP ANSWER CONCISE' : ''
-    const finalPrompt = `${options.p} ${conciseMsg}\n\nTerminal context:\n\`\`\`text\n${selectedLines.join('\n')}\n\`\`\``;
+    const extraInstrct = options.p === "Explain this terminal output" ? '' : "Do not mention the shell prompt (<user>:<dir>$) portion unless asked."
+    const finalPrompt = `${options.p} ${extraInstrct} ${conciseMsg}\n\nTerminal context:\n\`\`\`text\n${formattedLines.join('\n')}\n\`\`\``;
+    console.log(JSON.stringify(finalPrompt, null, 2));
     await streamOllama(finalPrompt);
   }
-}
+}//tail -f /tmp/current_terminal.log | cat -v

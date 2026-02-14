@@ -1,22 +1,26 @@
 # --- TERMAI LOGGING START ---
 if [ -z "$SCRIPT_LOGGING" ] && [ "$TERM" != "dumb" ]; then
     export SCRIPT_LOGGING=1
-    # Auto-exit if log > 50KB after any command
-    export PROMPT_COMMAND='if [ -f /tmp/current_terminal.log ] && [ $(stat -c%s /tmp/current_terminal.log) -gt %%LOGSIZE%% ]; then touch /tmp/restart_termai && echo "logfile >= %%LOGSIZE%% B, clearing log file" && exit; fi'
+    
+    # Auto-rotate WITHOUT exiting. Keeps the last half of %%LOGSIZE%% bytes.
+    # Uses -c (bytes) for precision.
+    export PROMPT_COMMAND='if [ -f /tmp/current_terminal.log ] && [ $(stat -c%s /tmp/current_terminal.log) -gt %%LOGSIZE%% ]; then cp /tmp/current_terminal.log /tmp/termai_rotate.tmp && tail -c $((%%LOGSIZE%% / 2)) /tmp/termai_rotate.tmp > /tmp/current_terminal.log && rm /tmp/termai_rotate.tmp && echo "--- Log file reached $((%%LOGSIZE%% / 1024)) KB. Trimmed to keep context. ---"; fi'
     
     while true; do
-        script -q -f /tmp/current_terminal.log
+        # Use -a (append) to allow background truncation
+        script -q -a -f /tmp/current_terminal.log
+        
+        # This part only runs if you manually type 'exit' or use an alias
         if [ -f /tmp/restart_termai ]; then
             rm /tmp/restart_termai
             > /tmp/current_terminal.log
-            sleep 0.1
             continue
-        else
-            break
         fi
+        break
     done
-    exit
+    if [ -f /tmp/termai_nolog ]; then rm /tmp/termai_nolog; else exit; fi
 fi
-alias clearlog='touch /tmp/restart_termai && exit'
+# Safe manual clear that doesn't restart the session
+alias clearlog='cp /tmp/current_terminal.log /tmp/termai_rotate.tmp && tail -c 100 /tmp/termai_rotate.tmp > /tmp/current_terminal.log && rm /tmp/termai_rotate.tmp && echo "Log cleared."'
+alias nolog='touch /tmp/termai_nolog && exit'
 # --- TERMAI LOGGING END ---
-                  
