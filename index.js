@@ -8,9 +8,11 @@ import { program } from 'commander';
 import fetch from 'node-fetch';
 import OpenAI from 'openai';
 import { execSync } from 'child_process';
+import startSetup from './setup.js';
 
 const CONFIG_PATH = path.join(os.homedir(), '.termai.json');
 const LOGFILE = '/tmp/current_terminal.log';
+const HISTORY_LOG = path.join(os.homedir(), '.command_log');
 
 // Default configuration
 let config = {
@@ -19,6 +21,11 @@ let config = {
   apiKey: "your-api-key",
   logsizeMax: "50"
 };
+
+const rlOps = {
+  yes: ['yes', 'y', 'ok', 'okay', ''],
+  no: ['no', 'n', 'exit', 'false', 'quit']
+}
 
 // Load existing config if it exists
 if (fs.existsSync(CONFIG_PATH)) {
@@ -44,7 +51,7 @@ const model = options.deep ? 'deepseek-v3.1:671b-cloud' : options.m;
 
 // --- UTILS ---
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-const question = (q) => new Promise((resolve) => rl.question(q, resolve));
+//const question = (q) => new Promise((resolve) => rl.question(q, resolve));
 
 function getWslHostIp(url) {
   if (url.includes('WSL_HOST')) {
@@ -106,66 +113,7 @@ async function streamOllama(prompt) {
 
 // --- COMMANDS ---
 if (options.setup) {
-  console.log("--- termai Setup ('enter' to skip) ---");
-
-  /* const newUrl = await question(`Ollama URL [${config.ollamaUrl}]: `);
-  if (newUrl) config.ollamaUrl = newUrl; */
-  const apiShortcuts = `
-  Enter your own endpoint or type 0, 1, 2 for shortcut:
-    [0] Ollama local (default) -> http://localhost:11434
-    [1] OpenAI model -> https://api.openai.com
-    [2] Ollama WSL (dynamic host) -> http://WSL_HOST:11434 
-  `;
-  console.log(apiShortcuts); // Fixed: actually log the shortcuts
-  
-  const newUrl = await question(`API Base URL [${config.ollamaUrl}]: `);
-  switch (newUrl) {
-    case '0': config.ollamaUrl = 'http://localhost:11434'; break;
-    case '1': config.ollamaUrl = 'https://api.openai.com'; break;
-    case '2': 
-      config.ollamaUrl = 'http://WSL_HOST:11434'; 
-      console.log('> WSL Dynamic Host selected. IP will be detected at runtime.');
-      break;
-    case '': break;
-    default:
-      config.ollamaUrl = newUrl;
-  }
-
-  const newKey = await question(`API Key (optional for Ollama) [${config.apiKey}]: `);
-  if (newKey) config.apiKey = newKey;
-
-  const newModel = await question(`Default Model [${config.defaultModel}]: `);
-  if (newModel) config.defaultModel = newModel;
-
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-  console.log('Settings saved to ' + CONFIG_PATH);
-
-  const bashrcPath = path.join(os.homedir(), '.bashrc');
-  //5242880
-  const content = fs.readFileSync(bashrcPath, 'utf-8');
-  if (!content.includes('SCRIPT_LOGGING')) {
-    while (true) {
-      const doBash = await question('Allow terminal logging in .bashrc? (y/n/exit): ');
-      if (doBash.toLowerCase() === 'y' || doBash.toLowerCase() === '') {
-        console.log('Set custom upperbound on log file size. Must manually edit .bashrc if you want to change it again')
-        const newLogSize = await question(`Clear log file when >= [${config.logsizeMax} KB]: `);
-        if (newLogSize) config.logsizeMax = newLogSize;
-
-        let setupCode = fs.readFileSync('bash-setup.txt', 'utf-8');
-        setupCode = setupCode.replace(/%%LOGSIZE%%/g, Number(config.logsizeMax)*1024);
-        fs.appendFileSync(bashrcPath, setupCode);
-        console.log('Updated .bashrc. !!! RUN THIS NOW: source ~/.bashrc !!!');
-        break;
-      } else if (doBash.toLowerCase() === 'exit') {
-        console.log("Exiting setup, termai won't be usable until you enable logging. Run 'termai --setup' to start the setup process again")
-        break;
-      } else {
-        console.log("termai needs to log terminal output in order to work. The bash terminal does not store output on its own. Type 'exit' to quit loop")
-      }
-    }
-  } else {
-    console.log('.bashrc logging already configured.');
-  }
+  await startSetup(rl)
 
   rl.close();
 }
@@ -207,15 +155,79 @@ else {
       if (isPrompt && blocksFound === numBlocks + 1) break;
     }
 
-    // Label lines to help LLM distinguish command from output
-    const formattedLines = selectedLines.map(line => {
-      return promptRegex.test(line) ? `USER_COMMAND: ${line}` : `SYSTEM_OUTPUT: ${line}`;
-    });
+    const historyCmds = fs.existsSync(HISTORY_LOG) 
+      ? fs.readFileSync(HISTORY_LOG, 'utf-8').split('\n').filter(l => l.trim() !== '')
+      : [];
+    
+    let promptsCounted = 0;
+    const formattedLines = [];
+    let outputBuffer = [];
+
+    // Process backwards to group output with its preceding command
+    for (let j = selectedLines.length - 1; j >= 0; j--) {
+      const line = selectedLines[j];
+      if (promptRegex.test(line)) {
+        // We hit a prompt, so the buffer contains all output that followed this command
+        if (outputBuffer.length > 0) {
+          formattedLines.unshift(`TERMINAL_OUTPUT:\n${outputBuffer.join('\n')}`);
+          outputBuffer = [];
+        }
+
+        promptsCounted++;
+        const histIndex = historyCmds.length - promptsCounted;
+        let command = (histIndex >= 0 && historyCmds[histIndex]) ? historyCmds[histIndex] : line;
+        
+        // No longer need to aggressively strip numbers if we did it in PROMPT_COMMAND,
+        // but we'll keep a simple trim to ensure it looks good.
+        command = command.trim();
+        
+        formattedLines.unshift(`TERMINAL_COMMAND: ${command}`);
+      } else {
+        outputBuffer.unshift(line);
+      }
+    }
+
+    // Capture any output that might exist before the very first prompt in the selection
+    if (outputBuffer.length > 0) {
+      formattedLines.unshift(`TERMINAL_OUTPUT:\n${outputBuffer.join('\n')}`);
+    }
 
     const conciseMsg = options.c ? 'KEEP ANSWER CONCISE' : ''
-    const extraInstrct = options.p === "Explain this terminal output" ? '' : "Do not mention the shell prompt (<user>:<dir>$) portion unless asked."
+    const extraInstrct = options.p === "Explain this terminal output" ? "Do not mention the shell prompt (<user>:<dir>$) portion unless asked." : ''
     const finalPrompt = `${options.p} ${extraInstrct} ${conciseMsg}\n\nTerminal context:\n\`\`\`text\n${formattedLines.join('\n')}\n\`\`\``;
-    console.log(JSON.stringify(finalPrompt, null, 2));
-    await streamOllama(finalPrompt);
+    //console.log(JSON.stringify(finalPrompt, null, 2));
+    console.log(finalPrompt)
+    //await streamOllama(finalPrompt);
   }
-}//tail -f /tmp/current_terminal.log | cat -v
+}
+//tail -f /tmp/current_terminal.log | cat -v
+//export PROMPT_COMMAND='echo "$USER@$HOSTNAME:${PWD/#$HOME/~}$ $(history 1 | sed "s/^[ ]*[0-9]*[ ]*//")" >> ~/.command_log'
+
+/* 
+# --- TERMAI LOGGING START ---
+if [ -z "$SCRIPT_LOGGING" ] && [ "$TERM" != "dumb" ]; then
+    export SCRIPT_LOGGING=1
+    
+    # Auto-rotate WITHOUT exiting. Keeps the last half of 51200 bytes.
+    # Uses -c (bytes) for precision.
+    export PROMPT_COMMAND='if [ -f /tmp/current_terminal.log ] && [ $(stat -c%s /tmp/current_terminal.log) -gt 51200 ]; then cp /tmp/current_terminal.log /tmp/termai_rotate.tmp && tail -c $((51200 / 2)) /tmp/termai_rotate.tmp > /tmp/current_terminal.log && rm /tmp/termai_rotate.tmp && echo "--- Log file reached $((51200 / 1024)) KB. Trimmed to keep context. ---"; fi'
+    
+    while true; do
+        # Use -a (append) to allow background truncation
+        script -q -a -f /tmp/current_terminal.log
+        
+        # This part only runs if you manually type 'exit' or use an alias
+        if [ -f /tmp/restart_termai ]; then
+            rm /tmp/restart_termai
+            > /tmp/current_terminal.log
+            continue
+        fi
+        break
+    done
+    if [ -f /tmp/termai_nolog ]; then rm /tmp/termai_nolog; else exit; fi
+fi
+# Safe manual clear that doesn't restart the session
+alias clearlog='cp /tmp/current_terminal.log /tmp/termai_rotate.tmp && tail -c 100 /tmp/termai_rotate.tmp > /tmp/current_terminal.log && rm /tmp/termai_rotate.tmp && echo "Log cleared."'
+alias nolog='touch /tmp/termai_nolog && exit'
+# --- TERMAI LOGGING END ---
+*/

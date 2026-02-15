@@ -1,26 +1,46 @@
 # --- TERMAI LOGGING START ---
-if [ -z "$SCRIPT_LOGGING" ] && [ "$TERM" != "dumb" ]; then
-    export SCRIPT_LOGGING=1
-    
-    # Auto-rotate WITHOUT exiting. Keeps the last half of %%LOGSIZE%% bytes.
-    # Uses -c (bytes) for precision.
-    export PROMPT_COMMAND='if [ -f /tmp/current_terminal.log ] && [ $(stat -c%s /tmp/current_terminal.log) -gt %%LOGSIZE%% ]; then cp /tmp/current_terminal.log /tmp/termai_rotate.tmp && tail -c $((%%LOGSIZE%% / 2)) /tmp/termai_rotate.tmp > /tmp/current_terminal.log && rm /tmp/termai_rotate.tmp && echo "--- Log file reached $((%%LOGSIZE%% / 1024)) KB. Trimmed to keep context. ---"; fi'
-    
-    while true; do
-        # Use -a (append) to allow background truncation
-        script -q -a -f /tmp/current_terminal.log
-        
-        # This part only runs if you manually type 'exit' or use an alias
-        if [ -f /tmp/restart_termai ]; then
-            rm /tmp/restart_termai
-            > /tmp/current_terminal.log
-            continue
-        fi
-        break
-    done
-    if [ -f /tmp/termai_nolog ]; then rm /tmp/termai_nolog; else exit; fi
+# Only start logging in interactive shells
+case $- in
+    *i*) ;;
+      *) return ;;
+esac
+
+LOGFILE="/tmp/current_terminal.log"
+LOGSIZE=%%LOGSIZE%%
+
+# Start logging once
+if [ -z "$TERMAI_ACTIVE" ]; then
+    export TERMAI_ACTIVE=1
+    script -q -a -f "$LOGFILE"
 fi
-# Safe manual clear that doesn't restart the session
-alias clearlog='cp /tmp/current_terminal.log /tmp/termai_rotate.tmp && tail -c 100 /tmp/termai_rotate.tmp > /tmp/current_terminal.log && rm /tmp/termai_rotate.tmp && echo "Log cleared."'
-alias nolog='touch /tmp/termai_nolog && exit'
+
+command_logger() {
+    local cmd
+    cmd=$(history 1 | sed 's/^[ ]*[0-9]*[ ]*//')
+
+    # Prevent logging internal commands
+    [[ "$cmd" == "$BASH_COMMAND" ]] && return
+
+    echo "$USER@$HOSTNAME:\${PWD/#$HOME/~}\$ $cmd" >> ~/.command_log
+}
+
+trap command_logger DEBUG
+
+rotate_log() {
+    if [ -f "$LOGFILE" ]; then
+        size=$(stat -c%s "$LOGFILE")
+        if (( size > LOGSIZE )); then
+            tmp=$(mktemp)
+            cp "$LOGFILE" "$tmp"
+            tail -c $((LOGSIZE / 2)) "$tmp" > "$LOGFILE"
+            rm "$tmp"
+            echo "--- Log trimmed ---"
+        fi
+    fi
+}
+
+PROMPT_COMMAND="rotate_log"
+
+alias clearlog='> /tmp/current_terminal.log; > ~/.command_log; echo "Logs cleared."'
+alias nolog='unset TERMAI_ACTIVE; exit'
 # --- TERMAI LOGGING END ---
