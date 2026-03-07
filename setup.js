@@ -108,28 +108,39 @@ async function startSetup(rl) {
     /* const newUrl = await question(`Ollama URL [${config.ollamaUrl}]: `);
     if (newUrl) config.ollamaUrl = newUrl; */
     const apiShortcuts = `
-    Enter your own endpoint or type 0, 1, 2 for shortcut:
+    Termai works with any openai endpoint compatible provider (almost all besides claude)
+    Enter your own endpoint or type 0, 1, 2, 3 for shortcut:
     [0] Ollama local (default) -> http://localhost:11434
-    [1] OpenAI model -> https://api.openai.com
-    [2] Ollama WSL (dynamic host) -> http://WSL_HOST:11434 
+    [1] Ollama WSL (dynamic host) -> http://WSL_HOST:11434
+    [2] OpenAI (gpt models) -> https://api.openai.com
+    [3] Gemini -> https://generativelanguage.googleapis.com/v1beta/openai/
     `;
     console.log(apiShortcuts); // Fixed: actually log the shortcuts
 
     const newUrl = await question(`API Base URL [${config.ollamaUrl}]: `);
     switch (newUrl) {
         case '0': config.ollamaUrl = 'http://localhost:11434'; break;
-        case '1': config.ollamaUrl = 'https://api.openai.com'; break;
-        case '2':
+        case '1':
             config.ollamaUrl = 'http://WSL_HOST:11434';
             console.log('> WSL Dynamic Host selected. IP will be detected at runtime.');
             break;
+        case '2': config.ollamaUrl = 'https://api.openai.com'; break;
+        case '3': config.ollamaUrl = 'https://generativelanguage.googleapis.com/v1beta/openai/'; break;
         case '': break;
         default:
             config.ollamaUrl = newUrl;
     }
 
-    const newKey = await question(`API Key (optional for Ollama) [${config.apiKey}]: `);
-    if (newKey) config.apiKey = newKey;
+    //console.log("Type 'path' if you want to use a file like .env")
+    let newKey = await question(`API Key (optional for Ollama) [${config.apiKey}]: `);
+    if (newKey) {
+        /* if (newKey.toLowerCase() === 'path') {
+            console.log("Enter full path to file and name of variable eg. /home/proj1/.env/<VAR_NAME>")
+            newKey = await question('Path and var name:');
+        } */
+        config.apiKey = newKey;
+    }
+        
 
     const newModel = await question(`Default Model [${config.defaultModel}]: `);
     if (newModel) config.defaultModel = newModel;
@@ -155,14 +166,13 @@ async function startSetup(rl) {
             removeTermaiLoggingSection(bashrcPath)
         }
 
-        console.log('Set custom upperbound on log file size.')
-        const newLogSize = await question(`Clear log file when >= [${config.logsizeMax} KB]: `);
+        const newLogSize = await question(`Truncate log file when it reaches [${config.logsizeMax} KB]: `);
         if (newLogSize) config.logsizeMax = newLogSize;
 
         let setupCode = BASH_TEXT//fs.readFileSync('bash-setup.txt', 'utf-8');
         setupCode = setupCode.replace(/%%LOGSIZE%%/g, Number(config.logsizeMax) * 1024);
         fs.appendFileSync(bashrcPath, setupCode);
-        console.log('Updated .bashrc. !!! RUN THIS NOW: source ~/.bashrc !!!');
+        console.log("Updated .bashrc RUN THIS NOW: 'source ~/.bashrc'");
 
     } else if (has_logging) {
         return

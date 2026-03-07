@@ -71,7 +71,7 @@ const resolvedUrl = getWslHostIp(config.ollamaUrl);
 
 // Initialize OpenAI client with the resolved URL
 const openai = new OpenAI({
-  baseURL: resolvedUrl.endsWith('/v1') ? resolvedUrl : `${resolvedUrl}/v1`,
+  baseURL: resolvedUrl.includes('v1') ? resolvedUrl : `${resolvedUrl}/v1`,
   apiKey: config.apiKey,
 });
 
@@ -107,7 +107,7 @@ async function streamOllama(prompt) {
     }
     process.stdout.write('\n');
   } catch (err) {
-    console.error(`\nConnection failed: ${err.message}. Is the AI service running?`);
+    console.error(`\nConnection failed: ${err.message}. Verify baseURL and API key are correct (make sure you have credits) or that the model is running`);
   }
 }
 

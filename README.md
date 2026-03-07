@@ -4,7 +4,7 @@
 
 ### Description
 
-A super lightweight CLI tool that can explain terminal output (from previous commands) using Ollama or any model supported by the OpenAI API v1 completion endpoints (includes more than openai models). The default configuration uses the Ollama generate API over localhost with the llama3.1 model. After running a command and getting output, run 'termai' and you will get an explanation of both the command and its output. Options to explain more than 1 command or use a custom prompt. You can even send regular prompts (without terminal output) as you would when using ollama models normally without needing to change commands or switch contexts.
+A super lightweight CLI tool that can explain terminal output (from previous commands) using Ollama or any provider that supports the OpenAI API v1 completion endpoints (OpenAI, Gemini, Perplexity, etc.). The default configuration uses Ollama over localhost with the llama3.1 model. After running a command and getting output, run 'termai' and you will get an explanation of both the command and its output. Options to explain more than 1 command or use a custom prompt. You can even send regular prompts (without terminal output) as you would when using ollama models normally without needing to change commands or switch contexts.
 
 Please note that the bash terminal does not store terminal output or offer a way to retrieve it so termai starts a script session and stores terminal output within a log file.
 
@@ -77,7 +77,7 @@ $wslIP = wsl -e bash -c "ip route | grep default | awk '{print `$3}'"; setx OLLA
 
 ### "Can I run non-Ollama models?"
 
-The api calls are done through the openai API v1 chat completion endpoints, this is the most widely used LLM API specification in the world and it is compatable with Ollama, OpenAI (gpt models), Deepseek, and more. You can easily change this through the --setup command. Unfortunately it lacks compatability with Google and Anthropic models, support for these will have to be added in the future. 
+The api calls are done through the openai API v1 chat completion endpoints, this is the most widely used LLM API specification in the world and it is compatable with Ollama, OpenAI (gpt models), Deepseek, and more. You can easily change this through the --setup command. Unfortunately it lacks compatability with Anthropic models, support for these will have to be added in the future. 
 
 ---
 ### Usage
@@ -107,7 +107,7 @@ what is 2+2
 ```
 ```
 lglen@omen-lg:~/termai$ termai
-> Querying llama3.1:latest at http://172.20.16.1:11434...
+> Querying llama3.1:latest at http://localhost:11434...
 
 This terminal output is showing the result of running a command in the Linux or Unix terminal.
 
@@ -124,14 +124,14 @@ In other words, the terminal is simply echoing back what was typed, without perf
 can use n>1 to add previous prompts/output into context
 ```
 lglen@omen-lg:~/termai$ termai -n 2 -p 'only explain the command being run'
-> Querying llama3.1:latest at http://172.20.16.1:11434...
+> Querying llama3.1:latest at http://localhost:11434...
 
 The command being run is `echo 'what is 2+2'`.
 ```
 anything typed after 'termai' without arguments will be treated as a prompt, wrapping in quotes ('') is optional. This let's you query ollama or your model like normal without any terminal output
 ```
 lglen@omen-lg:~/termai$ termai what is the capital of south africa?
-> Querying llama3.1:latest at http://172.20.16.1:11434...
+> Querying llama3.1:latest at http://localhost:11434...
 
 The capital of South Africa is Pretoria, although Cape Town serves as the legislative seat and Bloemfontein is the judicial seat. This unique arrangement is known as a "tripartite capital" or a "tricameral system," where:
 
@@ -142,4 +142,4 @@ The capital of South Africa is Pretoria, although Cape Town serves as the legisl
 So, depending on the context, you might hear different answers!
 ```
 ### More Info
-So far this project only supports bash terminals but I plan to add support for powershell as well. I will likely add support for more models in terms of their API configurations like claude, gemini, etc. You can always fork the repository and configure your own completions/APIs.
+So far this project only supports bash terminals but I plan to add support for powershell as well.
